@@ -43,9 +43,54 @@ function genList(buf) {
 }
 
 function saveFile(dir, buf, list) {
-    console.log("Saving files...");
-    for (let info of list)
-        wu.save(path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name), buf.slice(info.off, info.off + info.size));
+    console.log("保存文件...");
+    // 遍历文件信息列表list
+    for (let info of list) {
+        // //  根据文件信息构建文件路径，如果文件名以'/'开头，则表示是根目录下的文件，路径前面加上'.'，否则直接使用文件名
+        // let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name);
+        // // 从缓冲区buf中提取对应文件的数据，并保存到指定路径
+        // wu.save(filePath, buf.slice(info.off, info.off + info.size));
+
+
+        let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name); // 获取文件路径
+        let data = buf.slice(info.off, info.off + info.size); // 获取文件数据
+        let fileExtension = path.extname(filePath).toLowerCase(); // 获取文件扩展名并转换为小写
+        let fileContent;
+        try {
+            if (fileExtension === '.json') {
+                fileContent = JSON.stringify(JSON.parse(data.toString()), null, 2); // JSON格式化，缩进2个空格
+            }  else if (fileExtension === '.txt') {
+                fileContent = data.toString().replace(/\r\n|\n|\r/g, '\n'); // Only normalize line endings for .txt
+            } else if (fileExtension === '.html' || fileExtension === '.xml' || fileExtension === '.css' || fileExtension === '.js') {
+                // try {
+                //     const dom = new JSDOM(data.toString()); // 使用 JSDOM 创建虚拟 DOM
+                //     const document = parse(dom.window.document.documentElement.innerHTML); // 使用 node-html-parser 解析 HTML
+                //     fileContent = document.toString(); // 格式化后的 HTML 字符串
+                // } catch (parseError) {
+                //     console.error(`如果解析失败，则使用原始数据 ${filePath} 时出错:`, parseError); // 记录错误信息
+                //     // console.log(`原始数据: ${data.toString()}`); // 记录原始数据
+                    fileContent = data.toString(); // 如果解析失败，则使用原始数据
+
+                // }
+            }  else if (fileExtension === '.jpg' || fileExtension === '.png' || fileExtension === '.jpeg' || fileExtension === '.gif' || fileExtension === '.bmp') {
+                fileContent = data; // 二进制文件，不需要格式化
+            } else {
+                fileContent = data.toString(); // 默认处理为纯文本
+            }
+
+            // 尝试使用wu.save；如果失败，则回退到fs。
+            try {
+                wu.save(filePath, Buffer.from(fileContent)); // 使用wu.save保存文件
+            } catch (wuSaveError) {
+                console.error(`wu.save 针对 ${filePath} 失败:`, wuSaveError); // 记录wu.save的错误
+                fs.writeFileSync(filePath, fileContent); // 回退到fs进行保存
+            }
+
+        } catch (error) {
+            console.error(`处理文件 ${filePath} 时出错:`, error); // 记录错误
+            //  考虑在此处进行更复杂的错误处理（例如，将错误记录到文件中）
+        }
+    }
 }
 
 function packDone(dir, cb, order) {
@@ -179,13 +224,18 @@ function packDone(dir, cb, order) {
 }
 
 function doFile(name, cb, order) {
+    // 遍历order数组，如果元素以"s="开头，则将其后面的部分赋值给全局变量global.subPack
     for (let ord of order) if (ord.startsWith("s=")) global.subPack = ord.slice(3);
-    console.log("Unpack file " + name + "...");
+    console.log("解包文件 " + name + "...");
+    // 获取文件解压后的目录路径，该路径为wxapkg文件所在目录的父目录下，并以wxapkg文件名（不含扩展名）命名
     let dir = path.resolve(name, "..", path.basename(name, ".wxapkg"));
-    wu.get(name, buf => {
-        let [infoListLength, dataLength] = header(buf.slice(0, 14));
+    wu.get(name, buf => { // 使用wu.get异步获取文件内容
+        // 从缓冲区的前14个字节读取文件信息列表长度和数据长度
+        let [infoListLength, dataLength] = header(buf.slice(0, 14)); 
+        // 如果order数组包含"o"元素，则表示需要在解包完成后打印"Unpack done."，否则调用packDone函数处理后续操作
         if (order.includes("o")) wu.addIO(console.log.bind(console), "Unpack done.");
         else wu.addIO(packDone, dir, cb, order);
+        // 保存解压后的文件，dir为保存目录，buf为文件缓冲区，genList(buf.slice(14, infoListLength + 14))生成文件列表
         saveFile(dir, buf, genList(buf.slice(14, infoListLength + 14)));
     }, {});
 }

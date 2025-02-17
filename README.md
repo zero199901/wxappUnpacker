@@ -18,7 +18,7 @@ npm install uglify-es
     
 npm install js-beautify
 
-
+npm install jsdom
 ```
 # 使用
 
