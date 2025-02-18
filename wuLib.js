@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require('os');
+const beautify = require('js-beautify').html;
 let platform = os.platform();
 
 class CntEvent {
@@ -76,32 +77,86 @@ let ioLimit = new LimitedRunner(4096);
 
 function mkdirs(dir, cb) {
     ioLimit.runWithCb(fs.stat.bind(fs), dir, (err, stats) => {
-        if (err) mkdirs(path.dirname(dir), () => fs.mkdir(dir, cb));
-        else if (stats.isFile()) throw Error(dir + " was created as a file, so we cannot put file into it.");
-        else cb();
+        if (err) {
+            mkdirs(path.dirname(dir), () => {
+                fs.mkdir(dir, (err) => {
+                    if (err && err.code !== 'EEXIST') {
+                        console.error(`创建目录失败: ${dir}`, err);
+                        cb(err);
+                    } else {
+                        cb(null);
+                    }
+                });
+            });
+        } else if (stats.isFile()) {
+            const error = new Error(`${dir} 是一个文件，无法在其中创建文件`);
+            console.error(error.message);
+            cb(error);
+        } else {
+            cb(null);
+        }
     });
 }
 
 function save(name, content) {
-    ioEvent.encount();
-    mkdirs(path.dirname(name), () => ioLimit.runWithCb(fs.writeFile.bind(fs), name, content, err => {
-        if (err) {
-            if (platform.indexOf('win') != -1) {
-              console.log('Save file error: ' + err);
-            } else {
-              throw Error('Save file error: ' + err);
+    return new Promise((resolve, reject) => {
+        mkdirs(path.dirname(name), function (err) {
+            if (err) return reject(err);
+            
+            // 对HTML文件进行格式化
+            if (name.endsWith('.html') || name.endsWith('.wxml')) {
+                try {
+                    // 确保content是字符串
+                    let htmlContent = content;
+                    if (Buffer.isBuffer(content)) {
+                        htmlContent = content.toString('utf8');
+                    }
+                    
+                    // 检查内容是否为有效的字符串
+                    if (typeof htmlContent === 'string' && htmlContent.trim()) {
+                        content = beautify(htmlContent, {
+                            indent_size: 2,
+                            wrap_line_length: 80,
+                            preserve_newlines: true,
+                            max_preserve_newlines: 2,
+                            unformatted: ['code', 'pre', 'em', 'strong', 'span'],
+                            extra_liners: ['head', 'body', '/html']
+                        });
+                    } else {
+                        console.warn(`跳过格式化: ${name} (内容为空或无效)`);
+                    }
+                } catch (e) {
+                    console.error(`格式化HTML文件失败: ${name}`, e);
+                    // 发生错误时使用原始内容
+                    if (Buffer.isBuffer(content)) {
+                        content = content.toString('utf8');
+                    }
+                }
             }
-        }
-        ioEvent.decount();
-    }));
+            
+            // 确保写入的内容是Buffer或字符串
+            if (typeof content !== 'string' && !Buffer.isBuffer(content)) {
+                content = String(content);
+            }
+            
+            fs.writeFile(name, content, function (err) {
+                if (err) return reject(err);
+                resolve();
+            });
+        });
+    });
 }
 
-function get(name, cb, opt = {encoding: 'utf8'}) {
-    ioEvent.encount();
-    ioLimit.runWithCb(fs.readFile.bind(fs), name, opt, (err, data) => {
-        if (err) throw Error("Read file error: " + err);
+function get(name, cb) {
+    if (!cb || typeof cb !== 'function') {
+        cb = (data) => { }; // 提供默认的回调函数
+    }
+    fs.readFile(name, function (err, data) {
+        if (err) {
+            console.error(`读取文件 ${name} 失败:`, err);
+            cb(null);
+        }
         else cb(data);
-        ioEvent.decount();
     });
 }
 

@@ -24,139 +24,150 @@ function getWorkerPath(name) {
     return commPath;
 }
 
-function doConfig(configFile, cb) {
-    let dir = path.dirname(configFile); // 获取配置文件目录
+async function doConfig(configFile, cb) {
+    let content = fs.readFileSync(configFile, 'utf8');
     try {
-        wu.get(configFile, content => { // 异步读取配置文件
-            try {
-                let e = JSON.parse(content); // 解析配置文件为 JSON 对象
-                let k = e.pages; // 获取 pages 数组
-                k.splice(k.indexOf(wu.changeExt(e.entryPagePath)), 1); // 删除入口页面
-                k.unshift(wu.changeExt(e.entryPagePath)); // 将入口页面添加到数组开头
-                let app = {pages: k, window: e.global && e.global.window, tabBar: e.tabBar, networkTimeout: e.networkTimeout}; // 创建 app 配置对象
+        let config = JSON.parse(content);
+        // 确保config不为undefined
+        if (!config) {
+            console.error("配置文件为空或格式不正确");
+            return cb && cb({}); // 返回空对象而不是undefined
+        }
+        const dir = path.dirname(configFile);
+        
+        // 构建基础配置
+        const app = buildBaseConfig(config);
+        
+        // 处理子包
+        try {
+            processSubPackages(config, app);
+        } catch (error) {
+            console.error("子包处理错误:", error);
+        }
+        
+        // 处理页面配置
+        try {
+            await processPageConfigs(config, dir, configFile);
+        } catch (error) {
+            console.error("页面配置处理错误:", error);
+        }
+        
+        // 处理 tabBar
+        try {
+            await processTabBar(app, dir, cb, configFile);
+        } catch (error) {
+            console.error("TabBar 处理错误:", error);
+        }
+        
+        return cb && cb(config);
+    } catch (e) {
+        console.error("配置文件解析错误:", e.message);
+        return cb && cb({}); // 出错时返回空对象
+    }
+}
 
-                // 处理子包，使用 try...catch 包裹，防止错误导致程序中断
-                try {
-                    if (e.subPackages) {
-                        let subPackages = [];
-                        let pages = app.pages;
-                        for (let subPackage of e.subPackages) {
-                            let root = subPackage.root;
-                            //规范化子包路径，确保以'/'结尾
-                            let lastChar = root.substr(root.length - 1, 1);
-                            if (lastChar !== '/') {
-                                root += '/';
-                            }
-                            //规范化子包路径，确保不以'/'开头
-                            let firstChar = root.substr(0, 1);
-                            if (firstChar === '/') {
-                                root = root.substring(1);
-                            }
-                            let newPages = [];
-                            for (let page of subPackage.pages) {
-                                let items = page.replace(root, '');
-                                newPages.push(items);
-                                let subIndex = pages.indexOf(root + items);
-                                if (subIndex !== -1) {
-                                    pages.splice(subIndex, 1);
-                                }
-                            }
+function buildBaseConfig(config) {
+    let k = config.pages;
+    k.splice(k.indexOf(wu.changeExt(config.entryPagePath)), 1);
+    k.unshift(wu.changeExt(config.entryPagePath));
+    let app = {pages: k, window: config.global && config.global.window, tabBar: config.tabBar, networkTimeout: config.networkTimeout};
+    return app;
+}
 
-                            subPackage.root = root;
-                            subPackage.pages = newPages;
-                            subPackages.push(subPackage);
+function processSubPackages(config, app) {
+    if (!config.subPackages) return;
+    
+    let subPackages = [];
+    let pages = app.pages;
+    for (let subPackage of config.subPackages) {
+        let root = normalizeSubPackagePath(subPackage.root);
+        let newPages = processSubPackagePages(subPackage, root, pages);
+        
+        subPackage.root = root;
+        subPackage.pages = newPages;
+        subPackages.push(subPackage);
+    }
+    
+    app.subPackages = subPackages;
+    app.pages = pages;
+    console.log("=======================================================\n这个小程序采用了分包\n子包个数为: ", app.subPackages.length, "\n=======================================================");
+}
+
+function normalizeSubPackagePath(root) {
+    if (!root.endsWith('/')) root += '/';
+    if (root.startsWith('/')) root = root.substring(1);
+    return root;
+}
+
+function processSubPackagePages(subPackage, root, pages) {
+    let newPages = [];
+    for (let page of subPackage.pages) {
+        let items = page.replace(root, '');
+        newPages.push(items);
+        let subIndex = pages.indexOf(root + items);
+        if (subIndex !== -1) {
+            pages.splice(subIndex, 1);
+        }
+    }
+    return newPages;
+}
+
+async function processPageConfigs(config, dir, configFile) {
+    let delWeight = 8;
+    for (let a in config.page) {
+        let fileName = path.resolve(dir, wu.changeExt(a, ".json"));
+        wu.save(fileName, JSON.stringify(config.page[a].window, null, 4));
+        if (configFile == fileName) delWeight = 0;
+    }
+    console.error("delWeight:", delWeight);
+}
+
+async function processTabBar(app, dir, cb, configFile) {
+    let delWeight = 8;
+    if (app.tabBar && app.tabBar.list) {
+        wu.scanDirByExt(dir, "", li => {
+            let digests = [], digestsEvent = new wu.CntEvent(), rdir = path.resolve(dir);
+
+            function fixDir(dir) {
+                return dir.startsWith(rdir) ? dir.slice(rdir.length + 1) : dir;
+            }
+
+            digestsEvent.add(() => {
+                for (let e of app.tabBar.list) {
+                    e.pagePath = wu.changeExt(e.pagePath);
+                    if (e.iconData) {
+                        let hash = crypto.createHash("MD5").update(e.iconData, 'base64').digest();
+                        for (let [buf, name] of digests) if (hash.equals(buf)) {
+                            delete e.iconData;
+                            e.iconPath = fixDir(name).replace(/\\/g, '/');
+                            break;
                         }
-                        app.subPackages = subPackages;
-                        app.pages = pages;
-                        console.log("=======================================================\n这个小程序采用了分包\n子包个数为: ", app.subPackages.length, "\n=======================================================");
                     }
-                } catch (subPackageError) {
-                    console.error("处理子包时出错:", subPackageError);
-                    // 可在此处添加处理子包错误的逻辑，例如跳过子包处理或使用默认值
-                }
-
-
-                // ... (rest of the code remains largely the same,  with try...catch blocks added as needed)
-
-                // 保存页面配置文件，使用 try...catch 包裹，防止错误导致程序中断
-                try {
-                    let delWeight = 8;
-                    for (let a in e.page) {
-                        let fileName = path.resolve(dir, wu.changeExt(a, ".json"));
-                        wu.save(fileName, JSON.stringify(e.page[a].window, null, 4));
-                        if (configFile == fileName) delWeight = 0;
+                    if (e.selectedIconData) {
+                        let hash = crypto.createHash("MD5").update(e.selectedIconData, 'base64').digest();
+                        for (let [buf, name] of digests) if (hash.equals(buf)) {
+                            delete e.selectedIconData;
+                            e.selectedIconPath = fixDir(name).replace(/\\/g, '/');
+                            break;
+                        }
                     }
-                } catch (pageConfigError) {
-                    console.error("保存页面配置时出错:", pageConfigError);
-                    // 可在此处添加处理页面配置错误的逻辑
                 }
-
-
+                wu.save(path.resolve(dir, 'app.json'), JSON.stringify(app, null, 4));
+                console.error("configFile:", configFile);
                 console.error("delWeight:", delWeight);
-                // ... (rest of the code, add try...catch where necessary)
-
-                //处理tabBar图标，使用try...catch包裹，防止错误导致程序中断
-                try{
-                    if (app.tabBar && app.tabBar.list) {
-                        wu.scanDirByExt(dir, "", li => {
-                            let digests = [], digestsEvent = new wu.CntEvent(), rdir = path.resolve(dir);
-
-                            function fixDir(dir) {
-                                return dir.startsWith(rdir) ? dir.slice(rdir.length + 1) : dir;
-                            }
-
-                            digestsEvent.add(() => {
-                                for (let e of app.tabBar.list) {
-                                    e.pagePath = wu.changeExt(e.pagePath);
-                                    if (e.iconData) {
-                                        let hash = crypto.createHash("MD5").update(e.iconData, 'base64').digest();
-                                        for (let [buf, name] of digests) if (hash.equals(buf)) {
-                                            delete e.iconData;
-                                            e.iconPath = fixDir(name).replace(/\\/g, '/');
-                                            break;
-                                        }
-                                    }
-                                    if (e.selectedIconData) {
-                                        let hash = crypto.createHash("MD5").update(e.selectedIconData, 'base64').digest();
-                                        for (let [buf, name] of digests) if (hash.equals(buf)) {
-                                            delete e.selectedIconData;
-                                            e.selectedIconPath = fixDir(name).replace(/\\/g, '/');
-                                            break;
-                                        }
-                                    }
-                                }
-                                wu.save(path.resolve(dir, 'app.json'), JSON.stringify(app, null, 4));
-                                console.error("configFile:", configFile);
-                                console.error("delWeight:", delWeight);
-                                cb({[configFile]: delWeight});
-                            });
-                            for (let name of li) {
-                                digestsEvent.encount();
-                                wu.get(name, data => {
-                                    digests.push([crypto.createHash("MD5").update(data).digest(), name]);
-                                    digestsEvent.decount();
-                                }, {});
-                            }
-                        });
-                    } else {
-                        wu.save(path.resolve(dir, 'app.json'), JSON.stringify(app, null, 4));
-                        cb({[configFile]: delWeight});
-                    }
-                } catch (tabBarError) {
-                    console.error("处理tabBar时出错:", tabBarError);
-                    //在此处添加处理tabBar错误的逻辑
-                }
-
-            } catch (jsonParseError) {
-                console.error("解析配置文件时出错:", jsonParseError);
-                cb(jsonParseError); // 将错误传递给回调函数
-                return; // 停止执行
+                cb({[configFile]: delWeight});
+            });
+            for (let name of li) {
+                digestsEvent.encount();
+                wu.get(name, data => {
+                    digests.push([crypto.createHash("MD5").update(data).digest(), name]);
+                    digestsEvent.decount();
+                }, {});
             }
         });
-    } catch (initialError) {
-        console.error("读取配置文件时出错:", initialError);
-        cb(initialError); // 将错误传递给回调函数
-        return; // 停止执行
+    } else {
+        wu.save(path.resolve(dir, 'app.json'), JSON.stringify(app, null, 4));
+        cb({[configFile]: delWeight});
     }
 }
 

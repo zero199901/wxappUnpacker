@@ -46,12 +46,6 @@ function saveFile(dir, buf, list) {
     console.log("保存文件...");
     // 遍历文件信息列表list
     for (let info of list) {
-        // //  根据文件信息构建文件路径，如果文件名以'/'开头，则表示是根目录下的文件，路径前面加上'.'，否则直接使用文件名
-        // let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name);
-        // // 从缓冲区buf中提取对应文件的数据，并保存到指定路径
-        // wu.save(filePath, buf.slice(info.off, info.off + info.size));
-
-
         let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name); // 获取文件路径
         let data = buf.slice(info.off, info.off + info.size); // 获取文件数据
         let fileExtension = path.extname(filePath).toLowerCase(); // 获取文件扩展名并转换为小写
@@ -76,6 +70,38 @@ function saveFile(dir, buf, list) {
                 fileContent = data; // 二进制文件，不需要格式化
             } else {
                 fileContent = data.toString(); // 默认处理为纯文本
+            }
+
+            // 对于wxml和html文件，进行格式化处理
+            if (fileExtension === '.wxml' || fileExtension === '.html') {
+                try {
+                    // 确保fileContent是字符串
+                    let htmlContent = fileContent;
+                    if (Buffer.isBuffer(fileContent)) {
+                        htmlContent = fileContent.toString('utf8');
+                    }
+                    
+                    // 检查内容是否为有效的字符串
+                    if (typeof htmlContent === 'string' && htmlContent.trim()) {
+                        const beautify = require('js-beautify').html;
+                        fileContent = beautify(htmlContent, {
+                            indent_size: 2,
+                            wrap_line_length: 80,
+                            preserve_newlines: true,
+                            max_preserve_newlines: 2,
+                            unformatted: ['code', 'pre', 'em', 'strong', 'span'],
+                            extra_liners: ['head', 'body', '/html']
+                        });
+                    } else {
+                        console.warn(`跳过格式化: ${filePath} (内容为空或无效)`);
+                    }
+                } catch (e) {
+                    console.error(`格式化文件失败: ${filePath}`, e);
+                    // 发生错误时使用原始内容
+                    if (Buffer.isBuffer(fileContent)) {
+                        fileContent = fileContent.toString('utf8');
+                    }
+                }
             }
 
             // 尝试使用wu.save；如果失败，则回退到fs。

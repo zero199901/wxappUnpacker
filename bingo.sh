@@ -1,4 +1,21 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# 添加错误处理
+set -e
+
+# 检查参数
+if [ $# -lt 1 ]; then
+    echo "使用方法: sh bingo.sh <wxapkg文件> [-d]"
+    exit 1
+fi
+
+# 获取wxapkg文件名（不含扩展名）
+WXAPKG_NAME=$(basename "$1" .wxapkg)
+
+# 清理目标目录
+if [ -d "${WXAPKG_NAME}" ]; then
+    echo "清理已存在的目录: ${WXAPKG_NAME}"
+    rm -rf "${WXAPKG_NAME}"
+fi
 
 # MyWxappUnpacker 项目路径
 WXAPPUNPACKER_PATH=`pwd`
@@ -37,5 +54,11 @@ de_pkg() {
 }
 # $1: pkg file or pkg dir; $2: order
 de_pkg $1 $2
+
+# 运行反编译
+node wuWxapkg.js "$@" || {
+    echo "反编译失败，请检查错误信息"
+    exit 1
+}
 
 
