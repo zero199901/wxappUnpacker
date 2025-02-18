@@ -108,133 +108,126 @@ function beautifyJsCode(code) {
     }
 }
 
-function deobfuscateVariableNames(code) {
-    // 常见的方法名映射
-    const methodNameMap = {
-        'onLaunch': 'onLaunch',
-        'onShow': 'onShow',
-        'onHide': 'onHide',
-        'onError': 'onError',
-        'onPageNotFound': 'onPageNotFound',
-        'onUnhandledRejection': 'onUnhandledRejection',
-        'onLoad': 'onLoad',
-        'onReady': 'onReady',
-        'onUnload': 'onUnload',
-        'onPullDownRefresh': 'onPullDownRefresh',
-        'onReachBottom': 'onReachBottom',
-        'onShareAppMessage': 'onShareAppMessage',
-        'onPageScroll': 'onPageScroll',
-        'onResize': 'onResize',
-        'onTabItemTap': 'onTabItemTap'
-    };
+// 添加方法名映射
+const methodNameMap = {
+    // 应用生命周期方法
+    'onLaunch': 'onLaunch',
+    'onShow': 'onShow',
+    'onHide': 'onHide',
+    'onError': 'onError',
+    'onPageNotFound': 'onPageNotFound',
+    'onUnhandledRejection': 'onUnhandledRejection',
+    
+    // 页面生命周期方法
+    'onLoad': 'onLoad',
+    'onReady': 'onReady',
+    'onShow': 'onShow',
+    'onHide': 'onHide',
+    'onUnload': 'onUnload',
+    'onPullDownRefresh': 'onPullDownRefresh',
+    'onReachBottom': 'onReachBottom',
+    'onShareAppMessage': 'onShareAppMessage',
+    'onPageScroll': 'onPageScroll',
+    'onResize': 'onResize',
+    'onTabItemTap': 'onTabItemTap',
+    
+    // 组件生命周期方法
+    'created': 'created',
+    'attached': 'attached',
+    'ready': 'ready',
+    'moved': 'moved',
+    'detached': 'detached',
+    
+    // 常见方法名
+    'getData': 'getData',
+    'setData': 'setData',
+    'getSystemInfo': 'getSystemInfo',
+    'request': 'request',
+    'navigateTo': 'navigateTo',
+    'redirectTo': 'redirectTo',
+    'switchTab': 'switchTab',
+    'reLaunch': 'reLaunch',
+    'navigateBack': 'navigateBack'
+};
 
+// 添加变量名映射
+const variableNameMap = {
+    'wx': 'wx',
+    'app': 'app',
+    'page': 'page',
+    'component': 'component',
+    'data': 'data',
+    'props': 'props',
+    'methods': 'methods',
+    'computed': 'computed',
+    'watch': 'watch'
+};
+
+function deobfuscateCode(code) {
     let deobfuscatedCode = code;
-
-    // 替换混淆的方法名
+    
+    // 1. 还原方法名
     Object.entries(methodNameMap).forEach(([original, readable]) => {
-        const pattern = new RegExp(`["']${original}["']\\s*:`, 'g');
-        deobfuscatedCode = deobfuscatedCode.replace(pattern, `${readable}:`);
+        // 匹配各种形式的方法名
+        const patterns = [
+            new RegExp(`["']${original}["']\\s*:`, 'g'),  // "onLoad": 或 'onLoad':
+            new RegExp(`\\b${original}\\s*:`, 'g'),       // onLoad:
+            new RegExp(`function\\s+${original}\\s*\\(`, 'g'), // function onLoad(
+            new RegExp(`\\.${original}\\s*\\(`, 'g')      // .onLoad(
+        ];
+        
+        patterns.forEach(pattern => {
+            deobfuscatedCode = deobfuscatedCode.replace(pattern, (match) => {
+                if (match.includes('function')) return `function ${readable}(`;
+                if (match.includes('.')) return `.${readable}(`;
+                return `${readable}:`;
+            });
+        });
     });
-
+    
+    // 2. 还原变量名
+    Object.entries(variableNameMap).forEach(([original, readable]) => {
+        const patterns = [
+            new RegExp(`\\b${original}\\b`, 'g'),         // 完整单词匹配
+            new RegExp(`["']${original}["']`, 'g')        // 字符串形式匹配
+        ];
+        
+        patterns.forEach(pattern => {
+            deobfuscatedCode = deobfuscatedCode.replace(pattern, readable);
+        });
+    });
+    
+    // 3. 处理特殊的混淆模式
+    deobfuscatedCode = deobfuscatedCode
+        // 处理数组访问形式的属性
+        .replace(/\[["'](\w+)["']\]/g, '.$1')
+        // 处理连续的函数调用
+        .replace(/\)\s*\.\s*call\s*\(/g, ').')
+        // 处理 eval 混淆
+        .replace(/eval\((.*?)\)/g, (match, p1) => {
+            try {
+                return eval(p1);
+            } catch (e) {
+                return match;
+            }
+        });
+    
     return deobfuscatedCode;
 }
 
-async function saveFile(dir, buf, list) {
-    const logger = createLogger(dir);
-    logger.log("开始保存文件...");
-    
-    let processedFiles = 0;
-    const totalFiles = list.length;
-    
-    for (let info of list) {
-        try {
-            let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name);
-            filePath = filePath.replace(/\\/g, '/');
-            
-            let data = buf.slice(info.off, info.off + info.size);
-            if (!data || data.length === 0) {
-                logger.error(`文件数据为空: ${info.name}`);
-                continue;
-            }
-            
-            // 确保目标目录存在
-            const fileDir = path.dirname(filePath);
-            if (!fs.existsSync(fileDir)) {
-                fs.mkdirSync(fileDir, { recursive: true });
-            }
-            
-            // 处理文件内容
-            const fileExtension = path.extname(filePath).toLowerCase();
-            let fileContent;
-            
-            try {
-                // 同步处理不同类型的文件
-                switch(fileExtension) {
-                    case '.js':
-                        fileContent = handleJsFile(info, data, filePath);
-                        break;
-                    case '.json':
-                        fileContent = handleJsonFile(data);
-                        break;
-                    case '.wxml':
-                    case '.html':
-                        fileContent = handleWxmlFile(data);
-                        break;
-                    case '.wxss':
-                    case '.css':
-                        fileContent = handleWxssFile(data);
-                        break;
-                    case '.svg':
-                        // 直接保存原始数据
-                        fileContent = data;
-                        break;
-                    default:
-                        fileContent = handleDefaultFile(data, fileExtension);
-                }
-
-                // 确保文件内容不为空且不是Promise
-                if (!fileContent) {
-                    throw new Error('文件内容为空');
-                }
-
-                // 如果不是Buffer，转换为Buffer
-                const contentToSave = Buffer.isBuffer(fileContent) ? 
-                    fileContent : 
-                    Buffer.from(typeof fileContent === 'string' ? fileContent : String(fileContent));
-                
-                // 同步写入文件
-                fs.writeFileSync(filePath, contentToSave);
-                processedFiles++;
-                logger.log(`进度: ${processedFiles}/${totalFiles} - 已保存: ${info.name}`);
-                
-            } catch (processError) {
-                logger.error(`处理文件内容失败 ${info.name}: ${processError.message}`);
-                // 保存原始数据作为备份
-                const backupPath = `${filePath}.backup`;
-                fs.writeFileSync(backupPath, data);
-                logger.log(`已创建备份文件: ${backupPath}`);
-            }
-            
-        } catch (error) {
-            logger.error(`处理文件失败: ${info.name}`, error);
-        }
-    }
-    
-    logger.log(`文件保存完成: 成功处理 ${processedFiles}/${totalFiles} 个文件`);
-}
-
-// 新增：处理JS文件
 function handleJsFile(info, data, filePath) {
     try {
         let jsContent = data.toString('utf-8');
         
+        // 对 JS 内容进行反混淆
+        jsContent = deobfuscateCode(jsContent);
+        
         // 特殊处理 app-service.js
         if (info.name.includes('app-service.js')) {
-            jsContent = deobfuscateVariableNames(jsContent);
             jsContent = handleAppServiceJs(jsContent);
         }
         
-        // 使用 js-beautify 格式化 JS 代码
+        // 格式化代码
         return beautify.js(jsContent, {
             indent_size: 2,
             space_in_empty_paren: true,
@@ -254,12 +247,11 @@ function handleJsFile(info, data, filePath) {
             e4x: true
         });
     } catch (error) {
-        console.error('JS 格式化失败:', error);
+        console.error('JS 文件处理失败:', error);
         return data.toString('utf-8');
     }
 }
 
-// 新增：处理 app-service.js 的特殊逻辑
 function handleAppServiceJs(content) {
     try {
         // 解析模块定义
@@ -282,7 +274,6 @@ function handleAppServiceJs(content) {
     }
 }
 
-// 新增：处理模块代码
 function processModuleCode(content, modulePath, moduleCode) {
     try {
         // 1. 处理模块路径
@@ -434,7 +425,104 @@ function packDone(dir, cb, order) {
     }
 }
 
-function doFile(name, cb, order) {
+// 添加 saveFile 函数的定义
+async function saveFile(dir, buf, list) {
+    const logger = createLogger(dir);
+    logger.log("开始保存文件...");
+    
+    // 添加文件计数
+    let processedFiles = 0;
+    const totalFiles = list.length;
+    
+    for (let info of list) {
+        try {
+            // 1. 规范化文件路径
+            let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name);
+            filePath = filePath.replace(/\\/g, '/'); // 统一使用正斜杠
+            
+            // 2. 获取文件数据
+            let data = buf.slice(info.off, info.off + info.size);
+            if (!data || data.length === 0) {
+                logger.error(`文件数据为空: ${info.name}`);
+                continue;
+            }
+            
+            // 3. 确保目标目录存在
+            const fileDir = path.dirname(filePath);
+            try {
+                if (!fs.existsSync(fileDir)) {
+                    fs.mkdirSync(fileDir, { recursive: true });
+                }
+            } catch (mkdirError) {
+                logger.error(`创建目录失败 ${fileDir}: ${mkdirError.message}`);
+                continue;
+            }
+            
+            // 4. 根据文件类型处理内容
+            const fileExtension = path.extname(filePath).toLowerCase();
+            let fileContent;
+            
+            try {
+                switch(fileExtension) {
+                    case '.js':
+                        fileContent = handleJsFile(info, data, filePath);
+                        break;
+                    case '.json':
+                        fileContent = handleJsonFile(data);
+                        break;
+                    case '.wxml':
+                    case '.html':
+                        fileContent = handleWxmlFile(data);
+                        break;
+                    case '.wxss':
+                    case '.css':
+                        fileContent = handleWxssFile(data);
+                        break;
+                    default:
+                        fileContent = handleDefaultFile(data, fileExtension);
+                }
+            } catch (processError) {
+                logger.error(`处理文件内容失败 ${info.name}: ${processError.message}`);
+                fileContent = data;
+            }
+
+            // 5. 保存文件
+            try {
+                // 确保文件内容不为空
+                if (!fileContent) {
+                    throw new Error('文件内容为空');
+                }
+                
+                // 如果不是 Buffer，转换为 Buffer
+                const contentToSave = Buffer.isBuffer(fileContent) ? 
+                    fileContent : 
+                    Buffer.from(fileContent);
+                
+                fs.writeFileSync(filePath, contentToSave);
+                processedFiles++;
+                logger.log(`进度: ${processedFiles}/${totalFiles} - 已保存: ${info.name}`);
+            } catch (saveError) {
+                logger.error(`保存文件失败 ${filePath}: ${saveError.message}`);
+                // 尝试使用备用方法保存
+                try {
+                    fs.writeFileSync(filePath + '.backup', data);
+                    logger.log(`已创建备份文件: ${filePath}.backup`);
+                } catch (backupError) {
+                    logger.error(`备份文件创建失败: ${backupError.message}`);
+                }
+            }
+            
+        } catch (error) {
+            logger.error(`处理文件失败: ${info.name}`, error);
+        }
+    }
+    
+    logger.log(`文件保存完成: 成功处理 ${processedFiles}/${totalFiles} 个文件`);
+    return processedFiles;
+}
+
+// 修改 doFile 函数
+async function doFile(name, cb, order) {
     console.log("解包文件 " + name + "...");
     const dir = path.resolve(name, "..", path.basename(name, ".wxapkg"));
     
@@ -452,7 +540,7 @@ function doFile(name, cb, order) {
             validateFileList(fileList, buf);
             
             // 保存文件
-            await saveFile(dir, buf, fileList);
+            const processedFiles = await saveFile(dir, buf, fileList);
             
             // 处理后续操作
             if (order.includes("o")) {

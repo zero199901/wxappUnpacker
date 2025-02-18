@@ -1313,7 +1313,7 @@
 	      if (root.tag == "wx-wx-scope") {
 	        root.tag = "virtual";
 	        root.wxCkey = "11";
-	        root['wxScopeData'] = root.attr['wx:scope-data'];
+	        root.wxScopeData = root.attr['wx:scope-data'];
 	        delete root.n;
 	        delete root.raw;
 	        delete root.generics;
@@ -7553,7 +7553,7 @@
 	                  [7],
 	                  [3, 'item']
 	                ],
-	                [3, 'data']
+	                [3, data]
 	              ],
 	              [
 	                [6],
@@ -7563,7 +7563,7 @@
 	                    [7],
 	                    [3, 'item']
 	                  ],
-	                  [3, 'data']
+	                  [3, data]
 	                ],
 	                [3, 'hide']
 	              ]
@@ -7578,7 +7578,7 @@
 	            [7],
 	            [3, 'item']
 	          ],
-	          [3, 'data']
+	          [3, data]
 	        ])
 	        Z([
 	          [7],
@@ -10951,7 +10951,7 @@
 	      .nv_exports; }
 
 	    f_['./components/actionsheet/actionsheet.wxml'] = {};
-	    f_['./components/actionsheet/actionsheet.wxml']['utils'] = nv_require(
+	    f_['./components/actionsheet/actionsheet.wxml'].utils = nv_require(
 	      "m_./components/actionsheet/actionsheet.wxml:utils");
 
 	    function np_1() { var nv_module = { nv_exports: {} }; var nv_join = (
@@ -10961,7 +10961,7 @@
 	        nv_isNotSlot: nv_isNotSlot, }); return nv_module.nv_exports; }
 
 	    f_['./components/barrage/roll/roll.wxml'] = {};
-	    f_['./components/barrage/roll/roll.wxml']['wxs'] = nv_require(
+	    f_['./components/barrage/roll/roll.wxml'].wxs = nv_require(
 	      "m_./components/barrage/roll/roll.wxml:wxs");
 
 	    function np_2() { var nv_module = { nv_exports: {} }; var
@@ -11466,7 +11466,7 @@
 	        .nv_exports; }
 
 	    f_['./components/barrage/setting/setting.wxml'] = {};
-	    f_['./components/barrage/setting/setting.wxml']['wxs'] = nv_require(
+	    f_['./components/barrage/setting/setting.wxml'].wxs = nv_require(
 	      "m_./components/barrage/setting/setting.wxml:wxs");
 
 	    function np_3() { var nv_module = { nv_exports: {} }; var nv_startY =
@@ -11531,7 +11531,7 @@
 	        .nv_exports; }
 
 	    f_['./components/half-screen-dialog/half-screen-dialog.wxml'] = {};
-	    f_['./components/half-screen-dialog/half-screen-dialog.wxml']['wxs'] =
+	    f_['./components/half-screen-dialog/half-screen-dialog.wxml'].wxs =
 	      nv_require(
 	        "m_./components/half-screen-dialog/half-screen-dialog.wxml:wxs");
 
@@ -11629,8 +11629,8 @@
 	        .nv_exports; }
 
 	    f_['./components/select-drama-dialog/select-drama-dialog.wxml'] = {};
-	    f_['./components/select-drama-dialog/select-drama-dialog.wxml'][
-	      'wxs'] = nv_require(
+	    f_['./components/select-drama-dialog/select-drama-dialog.wxml'].wxs =
+	      nv_require(
 	        "m_./components/select-drama-dialog/select-drama-dialog.wxml:wxs");
 
 	    function np_5() { var nv_module = { nv_exports: {} }; var nv_startY =
@@ -11703,13 +11703,13 @@
 	        .nv_exports; }
 
 	    f_['./components/slideview/slideview.wxml'] = {};
-	    f_['./components/slideview/slideview.wxml']['handler'] = f_[
+	    f_['./components/slideview/slideview.wxml'].handler = f_[
 	      './_commons/slideview.e3f4989e.wxs'] || nv_require(
 	      "p_./_commons/slideview.e3f4989e.wxs");
-	    f_['./components/slideview/slideview.wxml']['handler']();
+	    f_['./components/slideview/slideview.wxml'].handler();
 
 	    f_['./pages/playlet/playlet.wxml'] = {};
-	    f_['./pages/playlet/playlet.wxml']['wxs'] = nv_require(
+	    f_['./pages/playlet/playlet.wxml'].wxs = nv_require(
 	      "m_./pages/playlet/playlet.wxml:wxs");
 
 	    function np_6() { var nv_module = { nv_exports: {} }; var
@@ -15048,7 +15048,7 @@
 	    }
 	    e_[x[31]] = { f: m31, j: [], i: [], ti: [], ic: [] }
 	    d_[x[32]] = {}
-	    d_[x[32]]["chargeDialogDesc"] = function(e, s, r, gg) {
+	    d_[x[32]].chargeDialogDesc = function(e, s, r, gg) {
 	      var z = gz$gwx_wx94a6522b1d640c3b_33()
 	      var b = x[32] + ':chargeDialogDesc'
 	      r.wxVkey = b
@@ -21269,7 +21269,7 @@
 	    if (root.tag == "wx-wx-scope") {
 	      root.tag = "virtual";
 	      root.wxCkey = "11";
-	      root['wxScopeData'] = root.attr['wx:scope-data'];
+	      root.wxScopeData = root.attr['wx:scope-data'];
 	      delete root.n;
 	      delete root.raw;
 	      delete root.generics;
@@ -28486,7 +28486,7 @@
 	          [3, 'g2']
 	        ]
 	      ])
-	      Z([3, 'wx'])
+	      Z([3, wx])
 	      Z([
 	        [4],
 	        [
