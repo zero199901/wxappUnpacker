@@ -5,32 +5,47 @@ const wuMl = require("./wuWxml.js");
 const wuSs = require("./wuWxss.js");
 const path = require("path");
 const fs = require("fs");
+const beautify = require('js-beautify');
+const prettier = require('prettier');
 
 // 添加日志功能
 function createLogger(logPath) {
+    // 确保日志目录存在
+    if (!fs.existsSync(logPath)) {
+        fs.mkdirSync(logPath, { recursive: true });
+    }
+    
     const logFile = path.join(logPath, 'wxappUnpacker.log');
     
     return {
         log: function(...args) {
-            const message = args.map(arg => 
-                typeof arg === 'object' ? JSON.stringify(arg) : arg
-            ).join(' ');
-            const timestamp = new Date().toISOString();
-            const logMessage = `[${timestamp}] INFO: ${message}\n`;
-            
-            fs.appendFileSync(logFile, logMessage);
-            console.log(message); // 同时在控制台显示
+            try {
+                const message = args.map(arg => 
+                    typeof arg === 'object' ? JSON.stringify(arg) : arg
+                ).join(' ');
+                const timestamp = new Date().toISOString();
+                const logMessage = `[${timestamp}] INFO: ${message}\n`;
+                
+                fs.appendFileSync(logFile, logMessage);
+                console.log(message);
+            } catch (error) {
+                console.error('日志写入失败:', error);
+            }
         },
         
         error: function(...args) {
-            const message = args.map(arg => 
-                typeof arg === 'object' ? JSON.stringify(arg) : arg
-            ).join(' ');
-            const timestamp = new Date().toISOString();
-            const logMessage = `[${timestamp}] ERROR: ${message}\n`;
-            
-            fs.appendFileSync(logFile, logMessage);
-            console.error(message); // 同时在控制台显示错误
+            try {
+                const message = args.map(arg => 
+                    typeof arg === 'object' ? JSON.stringify(arg) : arg
+                ).join(' ');
+                const timestamp = new Date().toISOString();
+                const logMessage = `[${timestamp}] ERROR: ${message}\n`;
+                
+                fs.appendFileSync(logFile, logMessage);
+                console.error(message);
+            } catch (error) {
+                console.error('错误日志写入失败:', error);
+            }
         }
     };
 }
@@ -77,8 +92,7 @@ function genList(buf) {
 
 function beautifyJsCode(code) {
     try {
-        const beautify = require('js-beautify').js;
-        return beautify(code, {
+        return beautify.js(code, {
             indent_size: 2,
             space_in_empty_paren: true,
             preserve_newlines: true,
@@ -125,95 +139,169 @@ function deobfuscateVariableNames(code) {
     return deobfuscatedCode;
 }
 
-function saveFile(dir, buf, list) {
+async function saveFile(dir, buf, list) {
     const logger = createLogger(dir);
     logger.log("开始保存文件...");
     
+    let processedFiles = 0;
+    const totalFiles = list.length;
+    
     for (let info of list) {
-        let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name);
-        let data = buf.slice(info.off, info.off + info.size);
-        let fileExtension = path.extname(filePath).toLowerCase();
-        let fileContent;
-
         try {
-            if (fileExtension === '.js') {
-                if (info.name.includes('app-service.js')) {
-                    logger.log(`处理 app-service.js: ${filePath}`);
-                    let jsContent = data.toString();
-                    jsContent = deobfuscateVariableNames(jsContent);
-                    fileContent = beautifyJsCode(jsContent);
-                } else {
-                    logger.log(`处理 JS 文件: ${filePath}`);
-                    fileContent = beautifyJsCode(data.toString());
-                }
-            } else if (fileExtension === '.json') {
-                logger.log(`处理 JSON 文件: ${filePath}`);
-                fileContent = JSON.stringify(JSON.parse(data.toString()), null, 2);
-            } else if (fileExtension === '.txt') {
-                fileContent = data.toString().replace(/\r\n|\n|\r/g, '\n'); // Only normalize line endings for .txt
-            } else if (fileExtension === '.html' || fileExtension === '.xml' || fileExtension === '.css' || fileExtension === '.js') {
-                // try {
-                //     const dom = new JSDOM(data.toString()); // 使用 JSDOM 创建虚拟 DOM
-                //     const document = parse(dom.window.document.documentElement.innerHTML); // 使用 node-html-parser 解析 HTML
-                //     fileContent = document.toString(); // 格式化后的 HTML 字符串
-                // } catch (parseError) {
-                //     console.error(`如果解析失败，则使用原始数据 ${filePath} 时出错:`, parseError); // 记录错误信息
-                //     // console.log(`原始数据: ${data.toString()}`); // 记录原始数据
-                    fileContent = data.toString(); // 如果解析失败，则使用原始数据
-
-                // }
-            }  else if (fileExtension === '.jpg' || fileExtension === '.png' || fileExtension === '.jpeg' || fileExtension === '.gif' || fileExtension === '.bmp') {
-                fileContent = data; // 二进制文件，不需要格式化
-            } else {
-                fileContent = data.toString(); // 默认处理为纯文本
+            let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name);
+            filePath = filePath.replace(/\\/g, '/');
+            
+            let data = buf.slice(info.off, info.off + info.size);
+            if (!data || data.length === 0) {
+                logger.error(`文件数据为空: ${info.name}`);
+                continue;
             }
-
-            // 对于wxml和html文件，进行格式化处理
-            if (fileExtension === '.wxml' || fileExtension === '.html') {
-                try {
-                    // 确保fileContent是字符串
-                    let htmlContent = fileContent;
-                    if (Buffer.isBuffer(fileContent)) {
-                        htmlContent = fileContent.toString('utf8');
-                    }
-                    
-                    // 检查内容是否为有效的字符串
-                    if (typeof htmlContent === 'string' && htmlContent.trim()) {
-                        const beautify = require('js-beautify').html;
-                        fileContent = beautify(htmlContent, {
-                            indent_size: 2,
-                            wrap_line_length: 80,
-                            preserve_newlines: true,
-                            max_preserve_newlines: 2,
-                            unformatted: ['code', 'pre', 'em', 'strong', 'span'],
-                            extra_liners: ['head', 'body', '/html']
-                        });
-                    } else {
-                        console.warn(`跳过格式化: ${filePath} (内容为空或无效)`);
-                    }
-                } catch (e) {
-                    console.error(`格式化文件失败: ${filePath}`, e);
-                    // 发生错误时使用原始内容
-                    if (Buffer.isBuffer(fileContent)) {
-                        fileContent = fileContent.toString('utf8');
-                    }
-                }
+            
+            // 确保目标目录存在
+            const fileDir = path.dirname(filePath);
+            if (!fs.existsSync(fileDir)) {
+                fs.mkdirSync(fileDir, { recursive: true });
             }
-
-            // 尝试使用wu.save；如果失败，则回退到fs。
+            
+            // 处理文件内容
+            const fileExtension = path.extname(filePath).toLowerCase();
+            let fileContent;
+            
             try {
-                wu.save(filePath, Buffer.from(fileContent)); // 使用wu.save保存文件
-            } catch (wuSaveError) {
-                console.error(`wu.save 针对 ${filePath} 失败:`, wuSaveError); // 记录wu.save的错误
-                fs.writeFileSync(filePath, fileContent); // 回退到fs进行保存
-            }
+                // 同步处理不同类型的文件
+                switch(fileExtension) {
+                    case '.js':
+                        fileContent = handleJsFile(info, data, filePath);
+                        break;
+                    case '.json':
+                        fileContent = handleJsonFile(data);
+                        break;
+                    case '.wxml':
+                    case '.html':
+                        fileContent = handleWxmlFile(data);
+                        break;
+                    case '.wxss':
+                    case '.css':
+                        fileContent = handleWxssFile(data);
+                        break;
+                    case '.svg':
+                        // 直接保存原始数据
+                        fileContent = data;
+                        break;
+                    default:
+                        fileContent = handleDefaultFile(data, fileExtension);
+                }
 
+                // 确保文件内容不为空且不是Promise
+                if (!fileContent) {
+                    throw new Error('文件内容为空');
+                }
+
+                // 如果不是Buffer，转换为Buffer
+                const contentToSave = Buffer.isBuffer(fileContent) ? 
+                    fileContent : 
+                    Buffer.from(typeof fileContent === 'string' ? fileContent : String(fileContent));
+                
+                // 同步写入文件
+                fs.writeFileSync(filePath, contentToSave);
+                processedFiles++;
+                logger.log(`进度: ${processedFiles}/${totalFiles} - 已保存: ${info.name}`);
+                
+            } catch (processError) {
+                logger.error(`处理文件内容失败 ${info.name}: ${processError.message}`);
+                // 保存原始数据作为备份
+                const backupPath = `${filePath}.backup`;
+                fs.writeFileSync(backupPath, data);
+                logger.log(`已创建备份文件: ${backupPath}`);
+            }
+            
         } catch (error) {
-            console.error(`处理文件 ${filePath} 时出错:`, error); // 记录错误
-            //  考虑在此处进行更复杂的错误处理（例如，将错误记录到文件中）
+            logger.error(`处理文件失败: ${info.name}`, error);
         }
     }
-    logger.log("文件保存完成");
+    
+    logger.log(`文件保存完成: 成功处理 ${processedFiles}/${totalFiles} 个文件`);
+}
+
+// 新增：处理JS文件
+function handleJsFile(info, data, filePath) {
+    try {
+        let jsContent = data.toString('utf-8');
+        
+        // 特殊处理 app-service.js
+        if (info.name.includes('app-service.js')) {
+            jsContent = deobfuscateVariableNames(jsContent);
+            jsContent = handleAppServiceJs(jsContent);
+        }
+        
+        // 使用 js-beautify 格式化 JS 代码
+        return beautify.js(jsContent, {
+            indent_size: 2,
+            space_in_empty_paren: true,
+            preserve_newlines: true,
+            max_preserve_newlines: 2,
+            keep_array_indentation: false,
+            break_chained_methods: false,
+            indent_scripts: 'normal',
+            brace_style: 'collapse,preserve-inline',
+            space_before_conditional: true,
+            unescape_strings: false,
+            jslint_happy: false,
+            end_with_newline: true,
+            wrap_line_length: 80,
+            indent_inner_html: true,
+            comma_first: false,
+            e4x: true
+        });
+    } catch (error) {
+        console.error('JS 格式化失败:', error);
+        return data.toString('utf-8');
+    }
+}
+
+// 新增：处理 app-service.js 的特殊逻辑
+function handleAppServiceJs(content) {
+    try {
+        // 解析模块定义
+        const modulePattern = /define\("([^"]+)",\s*function\s*\(require,\s*module,\s*exports,\s*window,\s*document,\s*frames,\s*self\)\s*{([\s\S]+?})\);/g;
+        let matches = content.matchAll(modulePattern);
+        
+        let processedContent = content;
+        for (const match of matches) {
+            const modulePath = match[1];
+            const moduleCode = match[2];
+            
+            // 处理每个模块
+            processedContent = processModuleCode(processedContent, modulePath, moduleCode);
+        }
+        
+        return processedContent;
+    } catch (error) {
+        console.error('处理 app-service.js 失败:', error);
+        return content;
+    }
+}
+
+// 新增：处理模块代码
+function processModuleCode(content, modulePath, moduleCode) {
+    try {
+        // 1. 处理模块路径
+        const normalizedPath = modulePath.replace(/\\/g, '/');
+        
+        // 2. 处理模块内容
+        let processedCode = moduleCode
+            // 处理常见的混淆模式
+            .replace(/([a-zA-Z$_][a-zA-Z0-9$_]*)\["([a-zA-Z$_][a-zA-Z0-9$_]*)"\]/g, '$1.$2')
+            // 处理函数名混淆
+            .replace(/function\s+([a-zA-Z$_][a-zA-Z0-9$_]*)\s*\(/g, function(match, name) {
+                return `function ${deobfuscateFunctionName(name)}(`;
+            });
+            
+        return content.replace(moduleCode, processedCode);
+    } catch (error) {
+        console.error(`处理模块 ${modulePath} 失败:`, error);
+        return content;
+    }
 }
 
 function packDone(dir, cb, order) {
@@ -347,20 +435,125 @@ function packDone(dir, cb, order) {
 }
 
 function doFile(name, cb, order) {
-    // 遍历order数组，如果元素以"s="开头，则将其后面的部分赋值给全局变量global.subPack
-    for (let ord of order) if (ord.startsWith("s=")) global.subPack = ord.slice(3);
     console.log("解包文件 " + name + "...");
-    // 获取文件解压后的目录路径，该路径为wxapkg文件所在目录的父目录下，并以wxapkg文件名（不含扩展名）命名
-    let dir = path.resolve(name, "..", path.basename(name, ".wxapkg"));
-    wu.get(name, buf => { // 使用wu.get异步获取文件内容
-        // 从缓冲区的前14个字节读取文件信息列表长度和数据长度
-        let [infoListLength, dataLength] = header(buf.slice(0, 14)); 
-        // 如果order数组包含"o"元素，则表示需要在解包完成后打印"Unpack done."，否则调用packDone函数处理后续操作
-        if (order.includes("o")) wu.addIO(console.log.bind(console), "Unpack done.");
-        else wu.addIO(packDone, dir, cb, order);
-        // 保存解压后的文件，dir为保存目录，buf为文件缓冲区，genList(buf.slice(14, infoListLength + 14))生成文件列表
-        saveFile(dir, buf, genList(buf.slice(14, infoListLength + 14)));
-    }, {});
+    const dir = path.resolve(name, "..", path.basename(name, ".wxapkg"));
+    
+    // 确保输出目录存在
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    try {
+        wu.get(name, async (buf) => {
+            const [infoListLength, dataLength] = header(buf.slice(0, 14));
+            const fileList = genList(buf.slice(14, infoListLength + 14));
+            
+            // 验证文件完整性
+            validateFileList(fileList, buf);
+            
+            // 保存文件
+            await saveFile(dir, buf, fileList);
+            
+            // 处理后续操作
+            if (order.includes("o")) {
+                wu.addIO(console.log.bind(console), "Unpack done.");
+            } else {
+                wu.addIO(packDone, dir, cb, order);
+            }
+        });
+    } catch (error) {
+        console.error("处理文件失败:", error);
+        cb && cb(error);
+    }
+}
+
+// 新增：验证文件列表完整性
+function validateFileList(fileList, buf) {
+    for (const file of fileList) {
+        if (file.off + file.size > buf.length) {
+            throw new Error(`文件 ${file.name} 数据不完整`);
+        }
+    }
+}
+
+// 新增：处理 wxss 文件
+function handleWxssFile(data) {
+    try {
+        const content = data.toString('utf-8');
+        // 使用 js-beautify 的 css 格式化
+        return beautify.css(content, {
+            indent_size: 2,
+            indent_char: ' ',
+            max_preserve_newlines: 1,
+            preserve_newlines: true,
+            end_with_newline: true,
+            wrap_line_length: 0,
+            indent_inner_html: true
+        });
+    } catch (error) {
+        console.error('处理 wxss 文件失败:', error);
+        return data.toString('utf-8');
+    }
+}
+
+// 新增：处理 json 文件
+function handleJsonFile(data) {
+    try {
+        const content = data.toString('utf-8');
+        // 解析并格式化 JSON
+        const jsonObj = JSON.parse(content);
+        return JSON.stringify(jsonObj, null, 2);
+    } catch (error) {
+        console.error('处理 json 文件失败:', error);
+        return data.toString('utf-8');
+    }
+}
+
+// 新增：处理 wxml 文件
+function handleWxmlFile(data) {
+    try {
+        const content = data.toString('utf-8');
+        // 使用 js-beautify 的 html 格式化
+        return beautify.html(content, {
+            indent_size: 2,
+            indent_char: ' ',
+            max_preserve_newlines: 1,
+            preserve_newlines: true,
+            keep_array_indentation: false,
+            break_chained_methods: false,
+            indent_scripts: 'normal',
+            brace_style: 'collapse',
+            space_before_conditional: true,
+            unescape_strings: false,
+            jslint_happy: false,
+            end_with_newline: true,
+            wrap_line_length: 0,
+            indent_inner_html: true,
+            comma_first: false,
+            e4x: true
+        });
+    } catch (error) {
+        console.error('处理 wxml 文件失败:', error);
+        return data.toString('utf-8');
+    }
+}
+
+// 新增：处理其他类型文件的格式化
+function handleDefaultFile(data, fileExtension) {
+    // 对于二进制文件，直接返回原始数据
+    const binaryExtensions = ['.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    if (binaryExtensions.includes(fileExtension)) {
+        return data;
+    }
+    
+    // 对于文本文件，尝试格式化
+    try {
+        const content = data.toString('utf-8');
+        return content;
+    } catch (error) {
+        console.error(`文件格式化失败 (${fileExtension}):`, error);
+        return data;
+    }
 }
 
 module.exports = {doFile: doFile};
