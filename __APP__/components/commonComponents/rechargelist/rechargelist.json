@@ -1,0 +1,8 @@
+{
+  "usingComponents": {
+    "u-gap": "/uni_modules/uview-ui/components/u-gap/u-gap",
+    "u-empty": "/uni_modules/uview-ui/components/u-empty/u-empty",
+    "vk-uni-pay": "/uni_modules/vk-uni-pay/components/vk-uni-pay/vk-uni-pay"
+  },
+  "component": true
+}

@@ -6,19 +6,52 @@ const wuSs = require("./wuWxss.js");
 const path = require("path");
 const fs = require("fs");
 
+// 添加日志功能
+function createLogger(logPath) {
+    const logFile = path.join(logPath, 'wxappUnpacker.log');
+    
+    return {
+        log: function(...args) {
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg) : arg
+            ).join(' ');
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] INFO: ${message}\n`;
+            
+            fs.appendFileSync(logFile, logMessage);
+            console.log(message); // 同时在控制台显示
+        },
+        
+        error: function(...args) {
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg) : arg
+            ).join(' ');
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] ERROR: ${message}\n`;
+            
+            fs.appendFileSync(logFile, logMessage);
+            console.error(message); // 同时在控制台显示错误
+        }
+    };
+}
+
 function header(buf) {
-    console.log("\nHeader info:");
+    const logger = createLogger(path.dirname(process.argv[2]));
+    logger.log("\n文件头信息:");
     let firstMark = buf.readUInt8(0);
-    console.log("  firstMark: 0x%s", firstMark.toString(16));
+    logger.log("  firstMark: 0x%s", firstMark.toString(16));
     let unknownInfo = buf.readUInt32BE(1);
-    console.log("  unknownInfo: ", unknownInfo);
+    logger.log("  unknownInfo: ", unknownInfo);
     let infoListLength = buf.readUInt32BE(5);
-    console.log("  infoListLength: ", infoListLength);
+    logger.log("  infoListLength: ", infoListLength);
     let dataLength = buf.readUInt32BE(9);
-    console.log("  dataLength: ", dataLength);
+    logger.log("  dataLength: ", dataLength);
     let lastMark = buf.readUInt8(13);
-    console.log("  lastMark: 0x%s", lastMark.toString(16));
-    if (firstMark != 0xbe || lastMark != 0xed) throw Error("Magic number is not correct!");
+    logger.log("  lastMark: 0x%s", lastMark.toString(16));
+    if (firstMark != 0xbe || lastMark != 0xed) {
+        logger.error("Magic number 不正确!");
+        throw Error("Magic number 不正确!");
+    }
     return [infoListLength, dataLength];
 }
 
@@ -42,18 +75,81 @@ function genList(buf) {
     return fileInfo;
 }
 
+function beautifyJsCode(code) {
+    try {
+        const beautify = require('js-beautify').js;
+        return beautify(code, {
+            indent_size: 2,
+            space_in_empty_paren: true,
+            preserve_newlines: true,
+            max_preserve_newlines: 2,
+            break_chained_methods: false,
+            keep_array_indentation: false,
+            unescape_strings: false,
+            wrap_line_length: 80
+        });
+    } catch (e) {
+        console.error('JS 格式化失败:', e);
+        return code;
+    }
+}
+
+function deobfuscateVariableNames(code) {
+    // 常见的方法名映射
+    const methodNameMap = {
+        'onLaunch': 'onLaunch',
+        'onShow': 'onShow',
+        'onHide': 'onHide',
+        'onError': 'onError',
+        'onPageNotFound': 'onPageNotFound',
+        'onUnhandledRejection': 'onUnhandledRejection',
+        'onLoad': 'onLoad',
+        'onReady': 'onReady',
+        'onUnload': 'onUnload',
+        'onPullDownRefresh': 'onPullDownRefresh',
+        'onReachBottom': 'onReachBottom',
+        'onShareAppMessage': 'onShareAppMessage',
+        'onPageScroll': 'onPageScroll',
+        'onResize': 'onResize',
+        'onTabItemTap': 'onTabItemTap'
+    };
+
+    let deobfuscatedCode = code;
+
+    // 替换混淆的方法名
+    Object.entries(methodNameMap).forEach(([original, readable]) => {
+        const pattern = new RegExp(`["']${original}["']\\s*:`, 'g');
+        deobfuscatedCode = deobfuscatedCode.replace(pattern, `${readable}:`);
+    });
+
+    return deobfuscatedCode;
+}
+
 function saveFile(dir, buf, list) {
-    console.log("保存文件...");
-    // 遍历文件信息列表list
+    const logger = createLogger(dir);
+    logger.log("开始保存文件...");
+    
     for (let info of list) {
-        let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name); // 获取文件路径
-        let data = buf.slice(info.off, info.off + info.size); // 获取文件数据
-        let fileExtension = path.extname(filePath).toLowerCase(); // 获取文件扩展名并转换为小写
+        let filePath = path.resolve(dir, (info.name.startsWith("/") ? "." : "") + info.name);
+        let data = buf.slice(info.off, info.off + info.size);
+        let fileExtension = path.extname(filePath).toLowerCase();
         let fileContent;
+
         try {
-            if (fileExtension === '.json') {
-                fileContent = JSON.stringify(JSON.parse(data.toString()), null, 2); // JSON格式化，缩进2个空格
-            }  else if (fileExtension === '.txt') {
+            if (fileExtension === '.js') {
+                if (info.name.includes('app-service.js')) {
+                    logger.log(`处理 app-service.js: ${filePath}`);
+                    let jsContent = data.toString();
+                    jsContent = deobfuscateVariableNames(jsContent);
+                    fileContent = beautifyJsCode(jsContent);
+                } else {
+                    logger.log(`处理 JS 文件: ${filePath}`);
+                    fileContent = beautifyJsCode(data.toString());
+                }
+            } else if (fileExtension === '.json') {
+                logger.log(`处理 JSON 文件: ${filePath}`);
+                fileContent = JSON.stringify(JSON.parse(data.toString()), null, 2);
+            } else if (fileExtension === '.txt') {
                 fileContent = data.toString().replace(/\r\n|\n|\r/g, '\n'); // Only normalize line endings for .txt
             } else if (fileExtension === '.html' || fileExtension === '.xml' || fileExtension === '.css' || fileExtension === '.js') {
                 // try {
@@ -117,6 +213,7 @@ function saveFile(dir, buf, list) {
             //  考虑在此处进行更复杂的错误处理（例如，将错误记录到文件中）
         }
     }
+    logger.log("文件保存完成");
 }
 
 function packDone(dir, cb, order) {

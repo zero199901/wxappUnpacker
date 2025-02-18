@@ -1,0 +1,53 @@
+{
+  "renderer": {
+    "allUsed": [
+      "webview"
+    ],
+    "default": "webview"
+  },
+  "page": {
+    "__plugin__/wx94a6522b1d640c3b/pages/playlet/playlet.html": {
+      "window": {
+        "renderer": "webview",
+        "navigationStyle": "custom",
+        "backgroundColor": "#000000",
+        "backgroundColorContent": "#000000ff",
+        "disableScroll": true,
+        "style": "v2",
+        "navigationBarTextStyle": "white",
+        "singlePage": {},
+        "componentGenerics": {
+          "charge-dialog": true,
+          "open-area-left": true,
+          "open-area-right": true,
+          "open-area-left-side": true
+        },
+        "pageOrientation": "portrait",
+        "__warning__": "invalid page.json singlePage[\"navigationBarBackgroundColor\"]、page.json singlePage[\"navigationBarBackgroundAlpha\"]、page.json singlePage[\"navigationBarTextStyle\"]、page.json [\"backgroundColorContent\"]"
+      }
+    },
+    "__plugin__/wx94a6522b1d640c3b/pages/skit-detail/skit-detail.html": {
+      "window": {
+        "renderer": "webview",
+        "navigationStyle": "custom",
+        "backgroundColor": "#fff",
+        "disableScroll": true,
+        "style": "v2",
+        "navigationBarTextStyle": "black",
+        "navigationBarBackgroundColor": "#fff",
+        "singlePage": {},
+        "componentGenerics": {
+          "charge-dialog": true,
+          "open-area-left": true,
+          "open-area-right": true
+        },
+        "pageOrientation": "portrait",
+        "__warning__": "invalid page.json singlePage[\"navigationBarBackgroundColor\"]、page.json singlePage[\"navigationBarBackgroundAlpha\"]、page.json singlePage[\"navigationBarTextStyle\"]"
+      }
+    }
+  },
+  "pages": {
+    "playlet": "__plugin__/wx94a6522b1d640c3b/pages/playlet/playlet",
+    "skit-detail": "__plugin__/wx94a6522b1d640c3b/pages/skit-detail/skit-detail"
+  }
+}
